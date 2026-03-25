@@ -33,6 +33,16 @@ export function createDemoSpec(): LayoutSpec {
         prefHeight: 72,
         maxWidth: 300,
       }),
+      searchCompact: widget({
+        id: 'searchCompact',
+        title: 'Search compact',
+        kind: 'toolbar',
+        minWidth: 72,
+        minHeight: 72,
+        prefWidth: 72,
+        prefHeight: 72,
+        maxWidth: 84,
+      }),
       filter: widget({
         id: 'filter',
         title: 'Filter',
@@ -129,4 +139,7 @@ export const OR_GROUPS = {
   toolbar: ['row', 'twoRows'] as const,
   sidebar: ['right', 'below'] as const,
   controls: ['horizontal', 'vertical'] as const,
+  search: ['full', 'compact'] as const,
+  transfer: ['topOnly', 'split'] as const,
+  visibility: ['all', 'hideShare', 'hideShareExport'] as const,
 };

@@ -29,22 +29,19 @@ function ensureChild(parent: HTMLElement, selector: string, className: string, t
 function setBaseClasses(element: HTMLElement, widget: Widget): void {
   element.className = `widget widget--${widget.kind}`;
 
-  const compactIds = new Set(['title', 'search', 'filter', 'export', 'share']);
+  const compactIds = new Set(['title', 'search', 'searchCompact', 'filter', 'export', 'share']);
   const controlIds = new Set(['ctrlA', 'ctrlB', 'ctrlC']);
-  const actionIds = new Set(['filter', 'export', 'share']);
+  const actionIds = new Set(['filter', 'export', 'share', 'searchCompact']);
 
   if (compactIds.has(widget.id)) {
     element.classList.add('widget--compact');
   }
-
   if (controlIds.has(widget.id)) {
     element.classList.add('widget--control-card');
   }
-
   if (actionIds.has(widget.id)) {
     element.classList.add('widget--action');
   }
-
   if (widget.computed.width < 150) {
     element.classList.add('widget--narrow');
   }
@@ -54,62 +51,49 @@ function matchesQuery(text: string): boolean {
   if (!state.query.trim()) {
     return true;
   }
-
   return text.toLowerCase().includes(state.query.trim().toLowerCase());
 }
 
 function renderCompactWidget(widget: Widget, element: HTMLElement): void {
   if (widget.id === 'title') {
-    const subtitle =
-      widget.computed.width < 240
-        ? 'Adaptive arrangements'
-        : 'One specification, many possible arrangements';
-
+    const subtitle = widget.computed.width < 240 ? 'Adaptive arrangements' : 'One specification, many possible arrangements';
     element.innerHTML = `
-      <div class="widget__compactTitle">Adaptive Editor</div>
-      <div class="widget__compactSub">${subtitle}</div>
+      <p class="widget__compactTitle">Adaptive Editor</p>
+      <p class="widget__compactSub">${subtitle}</p>
     `;
     return;
   }
 
   if (widget.id === 'search') {
-  const placeholder =
-    widget.computed.width < 230
-      ? 'Search...'
-      : widget.computed.width < 300
-        ? 'Search tools...'
-        : 'Search panels, tools, layers...';
+    const placeholder = widget.computed.width < 230 ? 'Search...' : widget.computed.width < 300 ? 'Search tools...' : 'Search panels, tools, layers...';
+    element.innerHTML = `
+      <p class="widget__compactTitle">Search</p>
+      <div class="search-box-shell">
+        <span class="search-icon">⌕</span>
+        <input class="search-input" value="${state.query}" placeholder="${placeholder}" readonly />
+      </div>
+    `;
+    return;
+  }
 
-  element.innerHTML = `
-    <div class="widget__compactTitle">Search</div>
-    <div class="search-box-shell">
-      <span class="search-icon">⌕</span>
-      <input
-        id="demo-search-input"
-        class="search-input"
-        type="text"
-        placeholder="${placeholder}"
-        value="${state.query.replace(/"/g, '&quot;')}"
-      />
-    </div>
-  `;
-  return;
-}
+  if (widget.id === 'searchCompact') {
+    element.innerHTML = `<div class="widget__singleLabel">⌕</div>`;
+    return;
+  }
 
   if (widget.id === 'filter') {
-  element.innerHTML = `<div class="widget__actionLabel">Filter</div>`;
-  return;
-}
+    element.innerHTML = `<div class="widget__actionLabel">Filter</div>`;
+    return;
+  }
 
   if (widget.id === 'export') {
-  element.innerHTML = `<div class="widget__actionLabel">Export</div>`;
-  return;
-}
+    element.innerHTML = `<div class="widget__actionLabel">Export</div>`;
+    return;
+  }
 
   if (widget.id === 'share') {
-  element.innerHTML = `<div class="widget__actionLabel">Share</div>`;
-  return;
-}
+    element.innerHTML = `<div class="widget__actionLabel">Share</div>`;
+  }
 }
 
 function renderStandardWidget(widget: Widget, element: HTMLElement): void {
@@ -117,27 +101,21 @@ function renderStandardWidget(widget: Widget, element: HTMLElement): void {
   const body = ensureChild(element, '.widget__body', 'widget__body');
 
   if (widget.id === 'content') {
-    const fullText =
-      'Resizable work area. This panel should stay dominant and receive most of the free space.';
+    const fullText = 'Resizable work area. This panel should stay dominant and receive most of the free space.';
     const shortText = 'Resizable work area that stays dominant.';
     const show = matchesQuery('main content editor canvas workspace');
-
     title.textContent = 'Main content';
     body.textContent = widget.computed.width < 520 ? shortText : fullText;
-
     element.classList.toggle('widget--muted', !show);
     return;
   }
 
   if (widget.id === 'sidebar') {
-    const fullText =
-      'Adaptive panel. It moves right or below depending on the chosen OR-constraint branch.';
-    const shortText = 'Adaptive panel that moves right or below.';
-    const show = matchesQuery('controls panel sidebar settings layers contrast brightness');
-
+    const fullText = 'Adaptive panel. It can stay on the right or move below the content, and it can also receive transferred toolbar actions.';
+    const shortText = 'Adaptive panel that moves and can receive actions.';
+    const show = matchesQuery('controls panel sidebar settings layers contrast brightness export share');
     title.textContent = 'Controls panel';
     body.textContent = widget.computed.width < 320 ? shortText : fullText;
-
     element.classList.toggle('widget--muted', !show);
     return;
   }
@@ -165,17 +143,11 @@ function renderStandardWidget(widget: Widget, element: HTMLElement): void {
 
   if (widget.id === 'footer') {
     title.textContent = 'Status footer';
-
     if (state.query.trim()) {
       body.textContent = `Search active: "${state.query}"`;
     } else {
-      body.textContent =
-        widget.computed.width < 500
-          ? 'Resize to trigger a new layout.'
-          : 'Resize the window to trigger a new layout solution.';
+      body.textContent = widget.computed.width < 500 ? 'Resize to trigger a new layout.' : 'Resize the window to trigger a new layout solution.';
     }
-
-    return;
   }
 }
 
@@ -189,11 +161,12 @@ function bindInteractiveControls(onStateChange: () => void): void {
     themeToggle.onclick = () => {
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;
-      themeToggle.textContent = state.theme === 'light' ? '🌙 Dark' : '☀ Light';
+      themeToggle.textContent = state.theme === 'light' ? '🌙 Dark' : '☀️ Light';
     };
   }
 
   if (searchInput) {
+    searchInput.value = state.query;
     searchInput.oninput = () => {
       state.query = searchInput.value;
       onStateChange();
@@ -219,11 +192,17 @@ function bindInteractiveControls(onStateChange: () => void): void {
 function renderWidget(widget: Widget, host: HTMLElement): void {
   const element = ensureChild(host, `[data-widget-id="${widget.id}"]`, `widget widget--${widget.kind}`);
   element.dataset.widgetId = widget.id;
+
+  if (widget.computed.width <= 0.5 || widget.computed.height <= 0.5) {
+    element.style.display = 'none';
+    return;
+  }
+
+  element.style.display = 'block';
   element.style.left = `${widget.computed.x}px`;
   element.style.top = `${widget.computed.y}px`;
   element.style.width = `${widget.computed.width}px`;
   element.style.height = `${widget.computed.height}px`;
-
   setBaseClasses(element, widget);
 
   if (element.classList.contains('widget--compact')) {
@@ -252,7 +231,6 @@ export function renderApp(app: HTMLElement): DemoUI {
         <strong>ORC Layout Prototype</strong>
         <span>Adaptive GUI with OR-constraints</span>
       </div>
-
       <div class="topbar__actions">
         <button id="theme-toggle" class="topbar-btn">🌙 Dark</button>
         <button id="fake-filter-toggle" class="topbar-btn">Quick filter</button>
@@ -260,12 +238,12 @@ export function renderApp(app: HTMLElement): DemoUI {
       </div>
     </div>
 
-    <div class="page">
+    <main class="page">
       <aside class="sidebar-info">
         <h1>ORC Layout Prototype</h1>
         <p>
-          A student-level replication of the core OR-constraint idea:
-          one layout specification, multiple alternative arrangements, runtime selection.
+          A student-level replication of the core OR-constraint idea: one layout specification,
+          multiple alternative arrangements, runtime selection.
         </p>
 
         <div class="badge-list">
@@ -274,31 +252,42 @@ export function renderApp(app: HTMLElement): DemoUI {
           <span class="badge">Penalty-based selection</span>
         </div>
 
-        <div class="panel">
+        <section class="panel">
           <h2>Selected alternatives</h2>
           <div id="choices"></div>
-          <div class="or-badge-row" id="or-badges"></div>
-        </div>
+          <div id="or-badges" class="or-badge-row"></div>
+        </section>
 
-        <div class="panel">
+        <section class="panel">
           <h2>Solver status</h2>
           <div id="solver-meta"></div>
-        </div>
+        </section>
 
-        <div class="panel">
+        <section class="panel">
           <h2>How to demo</h2>
-          <p>Resize the browser from wide to medium to narrow widths.</p>
-          <p>Watch the toolbar wrap, the sidebar move below, and the control cards switch orientation.</p>
-          <div class="resize-hint">Tip: use the theme toggle and search field during the demo to make the prototype feel interactive.</div>
-        </div>
+          <p>
+            Resize the browser from wide to medium to narrow widths.
+          </p>
+          <p>
+            Watch the toolbar wrap, the sidebar move below, the search widget switch representation,
+            optional actions disappear, and some toolbar buttons move into the sidebar.
+          </p>
+          <p class="resize-hint">
+            Tip: use the theme toggle and search field during the demo to make the prototype feel interactive.
+          </p>
+          <div class="search-box-shell" style="margin-top: 12px;">
+            <span class="search-icon">⌕</span>
+            <input id="demo-search-input" class="search-input" placeholder="Search layers, brightness, panels..." />
+          </div>
+        </section>
       </aside>
 
-      <main class="demo-shell">
+      <section class="demo-shell">
         <div class="demo-stage">
           <div id="demo-container" class="demo-container"></div>
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
   `;
 
   const container = app.querySelector<HTMLElement>('#demo-container');
@@ -327,19 +316,25 @@ export function renderApp(app: HTMLElement): DemoUI {
         <div class="choice-row"><strong>Toolbar:</strong> ${result.choice.toolbarMode}</div>
         <div class="choice-row"><strong>Sidebar:</strong> ${result.choice.sidebarMode}</div>
         <div class="choice-row"><strong>Controls:</strong> ${result.choice.controlsMode}</div>
+        <div class="choice-row"><strong>Search widget:</strong> ${result.choice.searchMode}</div>
+        <div class="choice-row"><strong>Connected layout:</strong> ${result.choice.transferMode}</div>
+        <div class="choice-row"><strong>Optional widgets:</strong> ${result.choice.visibilityMode}</div>
       `;
 
       orBadges.innerHTML = `
         <span class="or-badge">toolbar:${result.choice.toolbarMode}</span>
         <span class="or-badge">sidebar:${result.choice.sidebarMode}</span>
         <span class="or-badge">controls:${result.choice.controlsMode}</span>
+        <span class="or-badge">search:${result.choice.searchMode}</span>
+        <span class="or-badge">transfer:${result.choice.transferMode}</span>
+        <span class="or-badge">optional:${result.choice.visibilityMode}</span>
         <span class="or-badge">${state.theme}</span>
       `;
 
       solverMeta.innerHTML = `
         <div class="choice-row"><strong>Container:</strong> ${Math.round(width)} × ${Math.round(height)}</div>
         <div class="choice-row"><strong>Candidate score:</strong> ${result.score.toFixed(1)}</div>
-        <div class="choice-row"><strong>Search space:</strong> 8 OR-combinations</div>
+        <div class="choice-row"><strong>Search space:</strong> 48 OR-combinations</div>
         <div class="choice-row"><strong>Theme:</strong> ${state.theme}</div>
         <div class="choice-row"><strong>Search query:</strong> ${state.query || '—'}</div>
         <div class="choice-row"><strong>Debug:</strong> ${result.debug.join(' • ')}</div>

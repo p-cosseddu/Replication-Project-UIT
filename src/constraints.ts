@@ -8,11 +8,19 @@ function rectBottom(rect: Rect): number {
   return rect.y + rect.height;
 }
 
+function isHidden(widget: Widget): boolean {
+  return widget.computed.width <= 0.5 || widget.computed.height <= 0.5;
+}
+
 export function enforceInsideContainer(
   widget: Widget,
   container: ContainerRect,
   violations: ConstraintViolation[],
 ): void {
+  if (isHidden(widget)) {
+    return;
+  }
+
   const rect = widget.computed;
 
   if (rect.x < 0) {
@@ -36,29 +44,29 @@ export function enforceInsideContainer(
 }
 
 export function enforceSizeLimits(widget: Widget, violations: ConstraintViolation[]): void {
-  const rect = widget.computed;
+  if (isHidden(widget)) {
+    return;
+  }
 
+  const rect = widget.computed;
   if (rect.width < widget.minWidth) {
     violations.push({
       message: `${widget.id} is narrower than its minimum width`,
       penalty: (widget.minWidth - rect.width) * 30,
     });
   }
-
   if (rect.height < widget.minHeight) {
     violations.push({
       message: `${widget.id} is shorter than its minimum height`,
       penalty: (widget.minHeight - rect.height) * 30,
     });
   }
-
   if (widget.maxWidth !== undefined && rect.width > widget.maxWidth) {
     violations.push({
       message: `${widget.id} exceeds its maximum width`,
       penalty: (rect.width - widget.maxWidth) * 10,
     });
   }
-
   if (widget.maxHeight !== undefined && rect.height > widget.maxHeight) {
     violations.push({
       message: `${widget.id} exceeds its maximum height`,
@@ -68,17 +76,19 @@ export function enforceSizeLimits(widget: Widget, violations: ConstraintViolatio
 }
 
 export function penalizeDistanceFromPreferred(widget: Widget, violations: ConstraintViolation[]): void {
+  if (isHidden(widget)) {
+    return;
+  }
+
   const rect = widget.computed;
   const widthPenalty = Math.abs(rect.width - widget.prefWidth) * 0.4;
   const heightPenalty = Math.abs(rect.height - widget.prefHeight) * 0.4;
-
   if (widthPenalty > 0) {
     violations.push({
       message: `${widget.id} deviates from preferred width`,
       penalty: widthPenalty,
     });
   }
-
   if (heightPenalty > 0) {
     violations.push({
       message: `${widget.id} deviates from preferred height`,
@@ -88,6 +98,9 @@ export function penalizeDistanceFromPreferred(widget: Widget, violations: Constr
 }
 
 export function alignTop(a: Widget, b: Widget, violations: ConstraintViolation[], weight = 4): void {
+  if (isHidden(a) || isHidden(b)) {
+    return;
+  }
   const diff = Math.abs(a.computed.y - b.computed.y);
   if (diff > 0.5) {
     violations.push({
@@ -98,6 +111,9 @@ export function alignTop(a: Widget, b: Widget, violations: ConstraintViolation[]
 }
 
 export function alignLeft(a: Widget, b: Widget, violations: ConstraintViolation[], weight = 4): void {
+  if (isHidden(a) || isHidden(b)) {
+    return;
+  }
   const diff = Math.abs(a.computed.x - b.computed.x);
   if (diff > 0.5) {
     violations.push({
@@ -114,6 +130,9 @@ export function placeRightOf(
   violations: ConstraintViolation[],
   weight = 12,
 ): void {
+  if (isHidden(left) || isHidden(right)) {
+    return;
+  }
   const expected = left.computed.x + left.computed.width + spacing;
   const diff = Math.abs(right.computed.x - expected);
   if (diff > 0.5) {
@@ -131,6 +150,9 @@ export function placeBelow(
   violations: ConstraintViolation[],
   weight = 12,
 ): void {
+  if (isHidden(upper) || isHidden(lower)) {
+    return;
+  }
   const expected = upper.computed.y + upper.computed.height + spacing;
   const diff = Math.abs(lower.computed.y - expected);
   if (diff > 0.5) {

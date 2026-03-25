@@ -17,8 +17,23 @@ import {
 } from './constraints';
 import { OR_GROUPS } from './demo';
 
+type WidgetMap = Record<string, Widget>;
+
+type ToolbarPlan = {
+  activeSearch: Widget;
+  topActions: Widget[];
+  movedActions: Widget[];
+  hiddenActions: Widget[];
+  toolbarBottom: number;
+  actionWidth: number;
+};
+
 function setRect(widget: Widget, x: number, y: number, width: number, height: number): void {
   widget.computed = { x, y, width, height };
+}
+
+function hideWidget(widget: Widget): void {
+  setRect(widget, 0, 0, 0, 0);
 }
 
 function sumPenalty(violations: { penalty: number }[]): number {
@@ -31,7 +46,20 @@ function chooseAllAlternatives(): LayoutChoice[] {
   for (const toolbarMode of OR_GROUPS.toolbar) {
     for (const sidebarMode of OR_GROUPS.sidebar) {
       for (const controlsMode of OR_GROUPS.controls) {
-        choices.push({ toolbarMode, sidebarMode, controlsMode });
+        for (const searchMode of OR_GROUPS.search) {
+          for (const transferMode of OR_GROUPS.transfer) {
+            for (const visibilityMode of OR_GROUPS.visibility) {
+              choices.push({
+                toolbarMode,
+                sidebarMode,
+                controlsMode,
+                searchMode,
+                transferMode,
+                visibilityMode,
+              });
+            }
+          }
+        }
       }
     }
   }
@@ -82,92 +110,175 @@ function addMaxThresholdPenalty(
   }
 }
 
-function layoutToolbar(
-  spec: LayoutSpec,
-  widgets: Record<string, Widget>,
-  width: number,
-  choice: LayoutChoice,
-  debug: string[],
-): number {
-  const { padding, gap } = spec;
-  const title = widgets.title;
-  const search = widgets.search;
+function getVisibleActionSets(widgets: WidgetMap, choice: LayoutChoice): {
+  topActions: Widget[];
+  movedActions: Widget[];
+  hiddenActions: Widget[];
+} {
   const filter = widgets.filter;
   const exportBtn = widgets.export;
   const share = widgets.share;
 
-  const rowY = padding;
+  const topActions: Widget[] = [filter];
+  const movedActions: Widget[] = [];
+  const hiddenActions: Widget[] = [];
+
+  if (choice.transferMode === 'topOnly') {
+    topActions.push(exportBtn, share);
+  } else {
+    movedActions.push(exportBtn, share);
+  }
+
+  if (choice.visibilityMode === 'hideShare' || choice.visibilityMode === 'hideShareExport') {
+    const shareIndex = topActions.indexOf(share);
+    if (shareIndex >= 0) {
+      topActions.splice(shareIndex, 1);
+    }
+    const movedShareIndex = movedActions.indexOf(share);
+    if (movedShareIndex >= 0) {
+      movedActions.splice(movedShareIndex, 1);
+    }
+    hiddenActions.push(share);
+  }
+
+  if (choice.visibilityMode === 'hideShareExport') {
+    const exportIndex = topActions.indexOf(exportBtn);
+    if (exportIndex >= 0) {
+      topActions.splice(exportIndex, 1);
+    }
+    const movedExportIndex = movedActions.indexOf(exportBtn);
+    if (movedExportIndex >= 0) {
+      movedActions.splice(movedExportIndex, 1);
+    }
+    hiddenActions.push(exportBtn);
+  }
+
+  return { topActions, movedActions, hiddenActions };
+}
+
+function layoutToolbar(
+  spec: LayoutSpec,
+  widgets: WidgetMap,
+  width: number,
+  choice: LayoutChoice,
+  debug: string[],
+): ToolbarPlan {
+  const { padding, gap } = spec;
+  const title = widgets.title;
+  const search = widgets.search;
+  const searchCompact = widgets.searchCompact;
   const itemHeight = title.prefHeight;
+  const rowY = padding;
 
   const titleWidth = clampSize(
     Math.min(title.prefWidth, width * 0.24),
     title.minWidth,
     title.maxWidth,
   );
+  const actionWidth = clampSize(widgets.filter.prefWidth, widgets.filter.minWidth, widgets.filter.maxWidth);
 
-  const searchWidth = clampSize(
-    Math.min(search.prefWidth, width * 0.22),
-    search.minWidth,
-    search.maxWidth,
-  );
+  const { topActions, movedActions, hiddenActions } = getVisibleActionSets(widgets, choice);
 
-  const filterWidth = clampSize(filter.prefWidth, filter.minWidth, filter.maxWidth);
-  const exportWidth = clampSize(exportBtn.prefWidth, exportBtn.minWidth, exportBtn.maxWidth);
-  const shareWidth = clampSize(share.prefWidth, share.minWidth, share.maxWidth);
+  for (const widget of hiddenActions) {
+    hideWidget(widget);
+  }
+  for (const widget of movedActions) {
+    hideWidget(widget);
+  }
+
+  const activeSearch = choice.searchMode === 'compact' ? searchCompact : search;
+  const inactiveSearch = choice.searchMode === 'compact' ? search : searchCompact;
+  hideWidget(inactiveSearch);
+
+  const searchWidth = choice.searchMode === 'compact'
+    ? clampSize(searchCompact.prefWidth, searchCompact.minWidth, searchCompact.maxWidth)
+    : clampSize(Math.min(search.prefWidth, width * 0.22), search.minWidth, search.maxWidth);
 
   setRect(title, padding, rowY, titleWidth, itemHeight);
 
   if (choice.toolbarMode === 'row') {
-    const totalToolsWidth = searchWidth + filterWidth + exportWidth + shareWidth + gap * 3;
+    const totalActionsWidth = topActions.length > 0
+      ? topActions.length * actionWidth + gap * (topActions.length - 1)
+      : 0;
+    const rightClusterWidth = searchWidth + (topActions.length > 0 ? gap + totalActionsWidth : 0);
     const minStartAfterTitle = title.computed.x + title.computed.width + gap * 2;
-    const toolsStartX = Math.max(width - padding - totalToolsWidth, minStartAfterTitle);
+    const clusterStartX = Math.max(width - padding - rightClusterWidth, minStartAfterTitle);
 
-    setRect(search, toolsStartX, rowY, searchWidth, itemHeight);
-    setRect(filter, search.computed.x + search.computed.width + gap, rowY, filterWidth, itemHeight);
-    setRect(exportBtn, filter.computed.x + filter.computed.width + gap, rowY, exportWidth, itemHeight);
-    setRect(share, exportBtn.computed.x + exportBtn.computed.width + gap, rowY, shareWidth, itemHeight);
+    setRect(activeSearch, clusterStartX, rowY, searchWidth, itemHeight);
+
+    let cursorX = clusterStartX + searchWidth + (topActions.length > 0 ? gap : 0);
+    for (const action of topActions) {
+      setRect(action, cursorX, rowY, actionWidth, itemHeight);
+      cursorX += actionWidth + gap;
+    }
 
     debug.push('OR choice: toolbar arranged in one row');
-    return rowY + itemHeight + gap;
+    return {
+      activeSearch,
+      topActions,
+      movedActions,
+      hiddenActions,
+      toolbarBottom: rowY + itemHeight + gap,
+      actionWidth,
+    };
   }
 
   const secondRowY = rowY + itemHeight + gap;
   const firstRowStartX = title.computed.x + title.computed.width + gap * 2;
-  const firstRowAvailable = width - padding - firstRowStartX;
-  const actualSearchWidth = clampSize(
-    Math.min(searchWidth, firstRowAvailable),
-    search.minWidth,
-    search.maxWidth,
-  );
+  setRect(activeSearch, firstRowStartX, rowY, searchWidth, itemHeight);
 
-  setRect(search, firstRowStartX, rowY, actualSearchWidth, itemHeight);
+  if (topActions.length === 1) {
+    setRect(topActions[0], activeSearch.computed.x + activeSearch.computed.width + gap, rowY, actionWidth, itemHeight);
+    debug.push('OR choice: toolbar wrapped into two rows (single trailing action)');
+    return {
+      activeSearch,
+      topActions,
+      movedActions,
+      hiddenActions,
+      toolbarBottom: rowY + itemHeight + gap,
+      actionWidth,
+    };
+  }
 
-  const secondRowButtonWidth = clampSize(
-    Math.max(filter.minWidth, Math.min(150, (width - padding * 2 - gap * 2) / 3)),
-    120,
-    170,
-  );
+  const firstRowActionCount = topActions.length >= 3 ? 1 : 0;
+  let cursorX = activeSearch.computed.x + activeSearch.computed.width + (firstRowActionCount > 0 ? gap : 0);
 
-  const secondRowTotal = secondRowButtonWidth * 3 + gap * 2;
+  for (let index = 0; index < firstRowActionCount; index += 1) {
+    setRect(topActions[index], cursorX, rowY, actionWidth, itemHeight);
+    cursorX += actionWidth + gap;
+  }
+
+  const secondRowActions = topActions.slice(firstRowActionCount);
+  const secondRowTotal = secondRowActions.length * actionWidth + Math.max(0, secondRowActions.length - 1) * gap;
   const secondRowAvailable = width - padding * 2;
-  const secondRowStartX = padding + Math.max(0, (secondRowAvailable - secondRowTotal) / 2);
+  let secondRowStartX = padding;
+  if (secondRowActions.length > 0) {
+    secondRowStartX = padding + Math.max(0, (secondRowAvailable - secondRowTotal) / 2);
+  }
 
-  setRect(filter, secondRowStartX, secondRowY, secondRowButtonWidth, itemHeight);
-  setRect(exportBtn, filter.computed.x + filter.computed.width + gap, secondRowY, secondRowButtonWidth, itemHeight);
-  setRect(share, exportBtn.computed.x + exportBtn.computed.width + gap, secondRowY, secondRowButtonWidth, itemHeight);
+  for (let index = 0; index < secondRowActions.length; index += 1) {
+    setRect(secondRowActions[index], secondRowStartX + index * (actionWidth + gap), secondRowY, actionWidth, itemHeight);
+  }
 
   debug.push('OR choice: toolbar wrapped into two rows');
-  return secondRowY + itemHeight + gap;
+  return {
+    activeSearch,
+    topActions,
+    movedActions,
+    hiddenActions,
+    toolbarBottom: secondRowY + itemHeight + gap,
+    actionWidth,
+  };
 }
 
-function layoutFooter(spec: LayoutSpec, widgets: Record<string, Widget>, width: number, height: number): void {
+function layoutFooter(spec: LayoutSpec, widgets: WidgetMap, width: number, height: number): void {
   const { padding, footerHeight } = spec;
   setRect(widgets.footer, padding, height - padding - footerHeight, width - padding * 2, footerHeight);
 }
 
 function layoutBody(
   spec: LayoutSpec,
-  widgets: Record<string, Widget>,
+  widgets: WidgetMap,
   width: number,
   headerBottom: number,
   choice: LayoutChoice,
@@ -192,7 +303,6 @@ function layoutBody(
       sidebar.maxWidth,
     );
 
-    // Keep the content panel dominant, but do not starve the sidebar.
     sidebarWidth = Math.max(sidebarWidth, Math.min(sidebar.prefWidth, 360));
 
     let contentWidth = usableWidth - sidebarWidth;
@@ -233,10 +343,48 @@ function layoutBody(
   debug.push('OR choice: sidebar placed below the content');
 }
 
+function layoutMovedActions(
+  spec: LayoutSpec,
+  widgets: WidgetMap,
+  choice: LayoutChoice,
+  movedActions: Widget[],
+  actionWidth: number,
+  debug: string[],
+): number {
+  if (choice.transferMode !== 'split' || movedActions.length === 0) {
+    return 0;
+  }
+
+  const sidebar = widgets.sidebar;
+  const innerPadding = 16;
+  const actionHeight = widgets.filter.prefHeight;
+  const startY = sidebar.computed.y + 18;
+
+  if (choice.sidebarMode === 'right') {
+    let currentY = startY;
+    const x = sidebar.computed.x + sidebar.computed.width - innerPadding - actionWidth;
+    for (const action of movedActions) {
+      setRect(action, x, currentY, actionWidth, actionHeight);
+      currentY += actionHeight + spec.gap;
+    }
+    debug.push('OR choice: export/share moved into the sidebar mini-toolbar');
+    return movedActions.length * actionHeight + Math.max(0, movedActions.length - 1) * spec.gap;
+  }
+
+  const totalWidth = movedActions.length * actionWidth + Math.max(0, movedActions.length - 1) * spec.gap;
+  const x = sidebar.computed.x + sidebar.computed.width - innerPadding - totalWidth;
+  for (let index = 0; index < movedActions.length; index += 1) {
+    setRect(movedActions[index], x + index * (actionWidth + spec.gap), startY, actionWidth, actionHeight);
+  }
+  debug.push('OR choice: export/share moved into the top of the lower panel');
+  return actionHeight;
+}
+
 function layoutControls(
   spec: LayoutSpec,
-  widgets: Record<string, Widget>,
+  widgets: WidgetMap,
   choice: LayoutChoice,
+  movedActionHeight: number,
   debug: string[],
 ): void {
   const { gap } = spec;
@@ -246,8 +394,11 @@ function layoutControls(
   const ctrlC = widgets.ctrlC;
 
   const innerPadding = 16;
+  const sidebarHeaderOffset = choice.transferMode === 'split'
+    ? 130 + movedActionHeight + (movedActionHeight > 0 ? gap : 0)
+    : 130;
   const startX = sidebar.computed.x + innerPadding;
-  const startY = sidebar.computed.y + 130;
+  const startY = sidebar.computed.y + sidebarHeaderOffset;
   const availableWidth = sidebar.computed.width - innerPadding * 2;
 
   if (choice.controlsMode === 'horizontal') {
@@ -283,10 +434,18 @@ function evaluateLayout(
   const debug: string[] = [];
   const violations: LayoutResult['violations'] = [];
 
-  const headerBottom = layoutToolbar(spec, widgets, width, choice, debug);
+  const toolbarPlan = layoutToolbar(spec, widgets, width, choice, debug);
   layoutFooter(spec, widgets, width, height);
-  layoutBody(spec, widgets, width, headerBottom, choice, debug);
-  layoutControls(spec, widgets, choice, debug);
+  layoutBody(spec, widgets, width, toolbarPlan.toolbarBottom, choice, debug);
+  const movedActionHeight = layoutMovedActions(
+    spec,
+    widgets,
+    choice,
+    toolbarPlan.movedActions,
+    toolbarPlan.actionWidth,
+    debug,
+  );
+  layoutControls(spec, widgets, choice, movedActionHeight, debug);
 
   for (const widget of Object.values(widgets)) {
     enforceInsideContainer(widget, { width, height }, violations);
@@ -294,7 +453,30 @@ function evaluateLayout(
     penalizeDistanceFromPreferred(widget, violations);
   }
 
-  alignTop(widgets.title, widgets.search, violations);
+  alignTop(widgets.title, toolbarPlan.activeSearch, violations);
+  if (toolbarPlan.topActions.length > 0) {
+    placeRightOf(toolbarPlan.activeSearch, toolbarPlan.topActions[0], 12, violations, 3);
+  }
+  for (let index = 1; index < toolbarPlan.topActions.length; index += 1) {
+    placeRightOf(toolbarPlan.topActions[index - 1], toolbarPlan.topActions[index], 12, violations, 6);
+    addDistancePenalty(
+      toolbarPlan.topActions[index].computed.width,
+      toolbarPlan.actionWidth,
+      1.5,
+      violations,
+      'Toolbar actions should keep consistent widths',
+    );
+  }
+  for (const movedAction of toolbarPlan.movedActions) {
+    addDistancePenalty(
+      movedAction.computed.width,
+      toolbarPlan.actionWidth,
+      1.5,
+      violations,
+      'Moved actions should preserve the same slot size',
+    );
+  }
+
   placeBelow(widgets.content, widgets.sidebar, spec.gap, violations, choice.sidebarMode === 'below' ? 12 : 1);
   placeRightOf(widgets.content, widgets.sidebar, spec.gap, violations, choice.sidebarMode === 'right' ? 12 : 1);
 
@@ -313,8 +495,10 @@ function evaluateLayout(
   const content = widgets.content.computed;
   const sidebar = widgets.sidebar.computed;
   const title = widgets.title.computed;
-  const search = widgets.search.computed;
-  const share = widgets.share.computed;
+  const searchWidget = toolbarPlan.activeSearch.computed;
+  const lastTopWidget = toolbarPlan.topActions.length > 0
+    ? toolbarPlan.topActions[toolbarPlan.topActions.length - 1].computed
+    : searchWidget;
 
   if (choice.sidebarMode === 'right') {
     const bodyUsableWidth = width - spec.padding * 2 - spec.gap;
@@ -357,17 +541,17 @@ function evaluateLayout(
   }
 
   if (choice.toolbarMode === 'row') {
-    const toolbarGap = search.x - (title.x + title.width);
+    const toolbarGap = searchWidget.x - (title.x + title.width);
     addMinThresholdPenalty(
       toolbarGap,
       spec.gap * 2,
       12,
       violations,
-      'Toolbar row leaves too little space between title and actions',
+      'Toolbar row leaves too little space between title and search/actions',
     );
 
     addMaxThresholdPenalty(
-      share.x + share.width,
+      lastTopWidget.x + lastTopWidget.width,
       width - spec.padding,
       24,
       violations,
@@ -428,12 +612,52 @@ function evaluateLayout(
     });
   }
 
+  if (width >= 840 && choice.searchMode !== 'full') {
+    violations.push({ message: 'Wide layouts should keep the full search widget', penalty: 120 });
+  }
+  if (width < 840 && choice.searchMode !== 'compact') {
+    violations.push({ message: 'Narrow layouts benefit from the compact search alternative', penalty: 120 });
+  }
+
+  if (width >= 900 && choice.transferMode !== 'topOnly') {
+    violations.push({ message: 'Wide screens should keep all toolbar actions at the top', penalty: 120 });
+  }
+  if (width < 900 && choice.transferMode !== 'split') {
+    violations.push({ message: 'Smaller widths benefit from moving actions into the sidebar', penalty: 120 });
+  }
+
+  if (width >= 900 && choice.visibilityMode !== 'all') {
+    violations.push({ message: 'Wide screens should keep all optional actions visible', penalty: 140 });
+  }
+  if (width < 900 && width >= 700 && choice.visibilityMode !== 'hideShare') {
+    violations.push({ message: 'Medium widths should hide only the lowest-priority action', penalty: 120 });
+  }
+  if (width < 700 && choice.visibilityMode !== 'hideShareExport') {
+    violations.push({ message: 'Very narrow widths should hide two low-priority actions', penalty: 160 });
+  }
+
+  if (choice.transferMode === 'split' && choice.visibilityMode === 'hideShareExport' && choice.toolbarMode === 'twoRows') {
+    violations.push({ message: 'Two wrapped rows are unnecessary once two actions are hidden', penalty: 40 });
+  }
+
   if (
     choice.toolbarMode === 'row' &&
-    search.x - (title.x + title.width) >= spec.gap * 2 &&
-    share.x + share.width <= width - spec.padding
+    searchWidget.x - (title.x + title.width) >= spec.gap * 2 &&
+    lastTopWidget.x + lastTopWidget.width <= width - spec.padding
   ) {
     violations.push({ message: 'Compact toolbar row works well in this width', penalty: -40 });
+  }
+
+  if (choice.transferMode === 'split' && toolbarPlan.movedActions.length > 0) {
+    violations.push({ message: 'Connected sub-layout chosen: some actions moved into the sidebar', penalty: -35 });
+  }
+
+  if (choice.visibilityMode !== 'all') {
+    violations.push({ message: 'Optional widgets pattern activated', penalty: -20 });
+  }
+
+  if (choice.searchMode === 'compact') {
+    violations.push({ message: 'Alternative widget pattern activated for search', penalty: -20 });
   }
 
   return {

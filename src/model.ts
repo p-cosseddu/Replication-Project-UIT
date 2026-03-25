@@ -32,6 +32,9 @@ export interface LayoutChoice {
   toolbarMode: 'row' | 'twoRows';
   sidebarMode: 'right' | 'below';
   controlsMode: 'horizontal' | 'vertical';
+  searchMode: 'full' | 'compact';
+  transferMode: 'topOnly' | 'split';
+  visibilityMode: 'all' | 'hideShare' | 'hideShareExport';
 }
 
 export interface ConstraintViolation {
@@ -58,14 +61,12 @@ export type PartialRect = Partial<Rect>;
 
 export function cloneWidgets(source: Record<WidgetId, Widget>): Record<WidgetId, Widget> {
   const clone: Record<WidgetId, Widget> = {};
-
   for (const [id, widget] of Object.entries(source)) {
     clone[id] = {
       ...widget,
       computed: { ...widget.computed },
     };
   }
-
   return clone;
 }
 
@@ -73,6 +74,5 @@ export function clampSize(value: number, min: number, max?: number): number {
   if (max !== undefined) {
     return Math.max(min, Math.min(value, max));
   }
-
   return Math.max(min, value);
 }
